@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Product</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 40px 40px 30px;
+      color: white;
+      text-align: center;
+    }
+
+    .header h2 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 1.1rem;
+    }
+
+    .form-content {
+      padding: 40px;
+    }
+
+    .form-group {
+      margin-bottom: 28px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input[type="text"], 
+    input[type="number"], 
+    textarea,
+    input[type="file"] {
+      width: 100%;
+      padding: 16px 20px;
+      border: 2px solid #e5e7eb;
+      border-radius: 16px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      background: #fafafa;
+    }
+
+    input[type="text"]:focus, 
+    input[type="number"]:focus, 
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      transform: translateY(-2px);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 120px;
+      font-family: inherit;
+    }
+
+    .variants-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 40px 0 25px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid #f3f4f6;
+    }
+
+    .variants-header h3 {
+      color: #374151;
+      font-size: 1.8rem;
+      font-weight: 700;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 0.85rem;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-secondary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+    }
+
+    .variant-section {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 30px;
+      margin-bottom: 25px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .variant-section:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    }
+
+    .variant-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 20px 20px 0 0;
+    }
+
+    .variant-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .variant-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    .sizes-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 25px 0 15px;
+    }
+
+    .sizes-header h4 {
+      color: #374151;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .size-row {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 15px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+      transition: all 0.3s ease;
+    }
+
+    .size-row:hover {
+      border-color: #667eea;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+    }
+
+    .size-field {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .size-field label {
+      margin-bottom: 5px;
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+
+    .size-field input {
+      margin: 0;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+    }
+
+    .btn-submit {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 18px 40px;
+      border-radius: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.3s ease;
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+      width: 100%;
+      margin-top: 30px;
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
+    }
+
+    .alert {
+      padding: 20px 25px;
+      margin: 25px 0;
+      border-radius: 16px;
+      font-weight: 600;
+      text-align: center;
+      animation: slideIn 0.5s ease;
+    }
+
+    .alert.success {
+      background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+
+    .alert.error {
+      background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: -9999px;
+    }
+
+    .file-input-label {
+      padding: 16px 20px;
+      border: 2px dashed #d1d5db;
+      border-radius: 16px;
+      background: #fafafa;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: block;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .file-input-label:hover {
+      border-color: #667eea;
+      background: #f8faff;
+      color: #667eea;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .container {
+        margin: 10px;
+        border-radius: 20px;
+      }
+
+      .header {
+        padding: 30px 20px 25px;
+      }
+
+      .header h2 {
+        font-size: 2rem;
+      }
+
+      .form-content {
+        padding: 30px 20px;
+      }
+
+      .variant-section {
+        padding: 20px;
+      }
+
+      .size-row {
+        grid-template-columns: 1fr;
+        gap: 15px;
+      }
+
+      .variants-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+      }
+
+      .sizes-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 10px;
+      }
+
+      .header h2 {
+        font-size: 1.8rem;
+      }
+
+      .form-content {
+        padding: 20px 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Create Product</h2>
+      <p>Design your perfect product with variants and sizes</p>
+    </div>
+
+    <div class="form-content">
+      <form id="productForm">
+        <div class="form-group">
+          <label>Product Name</label>
+          <input type="text" name="name" placeholder="Enter product name..." required />
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <textarea name="description" placeholder="Describe your product in detail..." required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Category</label>
+          <input type="text" name="category" placeholder="e.g., Clothing, Electronics..." required />
+        </div>
+
+        <div class="variants-header">
+          <h3>Product Variants</h3>
+          <button type="button" class="btn-primary" onclick="addVariant()">+ Add Variant</button>
+        </div>
+        
+        <div id="variantsContainer"></div>
+
+        <button type="submit" class="btn-submit">Create Product</button>
+      </form>
+
+      <div id="alertBox"></div>
+    </div>
+  </div>
+
+  <script>
+    let variantCount = 0;
+    const fileMap = {};
+
+    function addVariant() {
+      const index = variantCount++;
+      const container = document.getElementById("variantsContainer");
+
+      const div = document.createElement("div");
+      div.className = "variant-section";
+      div.setAttribute("data-variant-index", index);
+
+      div.innerHTML = `
+        <div class="variant-header">
+          <span class="variant-title">Variant ${index + 1}</span>
+        </div>
+        
+        <div class="form-group">
+          <label>Color</label>
+          <input type="text" name="variant_${index}_color" placeholder="e.g., Red, Blue, Black..." required />
+        </div>
+
+        <div class="form-group">
+          <label>Images</label>
+          <div class="file-input-wrapper">
+            <input type="file" multiple id="file_${index}" onchange="storeFiles(this, ${index})" />
+            <label for="file_${index}" class="file-input-label">
+              📷 Click to upload images or drag and drop
+            </label>
+          </div>
+        </div>
+
+        <div class="sizes-header">
+          <h4>Available Sizes</h4>
+          <button type="button" class="btn-secondary" onclick="addSize(${index})">+ Add Size</button>
+        </div>
+        <div class="sizes-container" id="sizes_${index}"></div>
+      `;
+
+      container.appendChild(div);
+      addSize(index); // add 1 size row by default
+    }
+
+    function addSize(variantIndex) {
+      const sizesContainer = document.getElementById(`sizes_${variantIndex}`);
+      const sizeCount = sizesContainer.children.length;
+
+      const row = document.createElement("div");
+      row.className = "size-row";
+      row.innerHTML = `
+        <div class="size-field">
+          <label>Size</label>
+          <input type="text" name="variant_${variantIndex}_size_${sizeCount}" placeholder="S, M, L, XL..." required />
+        </div>
+        <div class="size-field">
+          <label>Price ($)</label>
+          <input type="number" name="variant_${variantIndex}_price_${sizeCount}" placeholder="29.99" step="0.01" required />
+        </div>
+        <div class="size-field">
+          <label>Stock</label>
+          <input type="number" name="variant_${variantIndex}_stock_${sizeCount}" placeholder="100" required />
+        </div>
+      `;
+      sizesContainer.appendChild(row);
+    }
+
+    function storeFiles(input, index) {
+      fileMap[index] = Array.from(input.files);
+      const label = input.nextElementSibling;
+      const fileCount = input.files.length;
+      if (fileCount > 0) {
+        label.innerHTML = `📷 ${fileCount} file${fileCount > 1 ? 's' : ''} selected`;
+        label.style.color = '#667eea';
+        label.style.borderColor = '#667eea';
+      } else {
+        label.innerHTML = '📷 Click to upload images or drag and drop';
+        label.style.color = '#6b7280';
+        label.style.borderColor = '#d1d5db';
+      }
+    }
+
+    function showAlert(msg, type) {
+      const box = document.getElementById("alertBox");
+      box.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+      setTimeout(() => box.innerHTML = "", 4000);
+    }
+
+    document.getElementById("productForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData();
+
+      formData.append("name", form.name.value);
+      formData.append("description", form.description.value);
+      formData.append("category", form.category.value);
+
+      const variants = [];
+      document.querySelectorAll(".variant-section").forEach((variantEl) => {
+        const index = variantEl.getAttribute("data-variant-index");
+        const color = form[`variant_${index}_color`].value;
+
+        const sizes = [];
+        const sizeRows = variantEl.querySelectorAll(".size-row");
+        sizeRows.forEach((row, i) => {
+          sizes.push({
+            size: form[`variant_${index}_size_${i}`].value,
+            price: parseFloat(form[`variant_${index}_price_${i}`].value),
+            stock: parseInt(form[`variant_${index}_stock_${i}`].value),
+          });
+        });
+
+        variants.push({ color, sizes });
+
+        const files = fileMap[index] || [];
+        files.forEach(file => formData.append(`variant_${index}_images`, file));
+      });
+
+      formData.append("variants", JSON.stringify(variants));
+
+      try {
+        const res = await fetch("http://localhost:8000/api/products", { method: "POST", body: formData });
+        if (res.ok) {
+          showAlert("🎉 Product created successfully!", "success");
+          form.reset();
+          document.getElementById("variantsContainer").innerHTML = "";
+          variantCount = 0;
+          Object.keys(fileMap).forEach(key => delete fileMap[key]);
+        } else {
+          const error = await res.json().catch(() => ({}));
+          showAlert("❌ " + (error.message || "Failed to create product."), "error");
+        }
+      } catch (err) {
+        console.error(err);
+        showAlert("❌ Unexpected error occurred.", "error");
+      }
+    });
+
+    // add first variant on load
+    addVariant();
+  </script>
+</body>
+</html>

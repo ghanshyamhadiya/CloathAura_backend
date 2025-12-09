@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Products</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.2rem;
+        }
+
+        .add-product-btn {
+            display: inline-block;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            margin: 20px 0;
+        }
+
+        .add-product-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        .product-card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .product-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.2);
+        }
+
+        .product-image {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .product-card:hover .product-image {
+            transform: scale(1.05);
+        }
+
+        .product-content {
+            padding: 25px;
+        }
+
+        .product-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .product-description {
+            color: #7f8c8d;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .product-category {
+            display: inline-block;
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .variants-section {
+            margin: 20px 0;
+        }
+
+        .variants-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .variant {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .variant-color {
+            font-weight: 600;
+            color: #e74c3c;
+            margin-bottom: 10px;
+        }
+
+        .sizes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .size-item {
+            background: white;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .size-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .size-price {
+            color: #27ae60;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .size-stock {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            text-align: center;
+            display: inline-block;
+        }
+
+        .btn-edit {
+            background: linear-gradient(45deg, #f39c12, #e67e22);
+            color: white;
+        }
+
+        .btn-delete {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .no-products {
+            text-align: center;
+            color: white;
+            font-size: 1.5rem;
+            margin-top: 100px;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            margin: 50px 0;
+        }
+
+        @media (max-width: 768px) {
+            .products-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Our Products</h1>
+            <p>Discover amazing products in our collection</p>
+            <a href="/add" class="add-product-btn">+ Add New Product</a>
+        </div>
+
+        <div id="loading" class="loading">Loading products...</div>
+        <div id="products-container" class="products-grid" style="display: none;"></div>
+        <div id="no-products" class="no-products" style="display: none;">
+            <h2>No products found</h2>
+            <p>Start by adding your first product!</p>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const productsContainer = document.getElementById('products-container');
+        const loadingDiv = document.getElementById('loading');
+        const noProductsDiv = document.getElementById('no-products');
+
+        // Load products on page load
+        loadProducts();
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('/api/products');
+                const products = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                
+                if (products.length === 0) {
+                    noProductsDiv.style.display = 'block';
+                } else {
+                    productsContainer.style.display = 'grid';
+                    displayProducts(products);
+                }
+            } catch (error) {
+                console.error('Error loading products:', error);
+                loadingDiv.style.display = 'none';
+                noProductsDiv.style.display = 'block';
+            }
+        }
+
+        function displayProducts(products) {
+            productsContainer.innerHTML = products.map(product => `
+                <div class="product-card">
+                    ${product.variants[0]?.images[0]?.url ? 
+                        `<img src="${product.variants[0].images[0].url}" alt="${product.name}" class="product-image">` : 
+                        `<div class="product-image" style="background: linear-gradient(45deg, #ddd, #bbb); display: flex; align-items: center; justify-content: center; color: #666;">No Image</div>`
+                    }
+                    <div class="product-content">
+                        <h3 class="product-name">${product.name}</h3>
+                        <p class="product-description">${product.description}</p>
+                        <span class="product-category">${product.category}</span>
+                        
+                        <div class="variants-section">
+                            <h4 class="variants-title">Available Variants (${product.variants.length})</h4>
+                            ${product.variants.map(variant => `
+                                <div class="variant">
+                                    <div class="variant-color">Color: ${variant.color}</div>
+                                    <div class="sizes-grid">
+                                        ${variant.sizes.map(size => `
+                                            <div class="size-item">
+                                                <div class="size-name">${size.size}</div>
+                                                <div class="size-price">$${size.price}</div>
+                                                <div class="size-stock">Stock: ${size.stock}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        
+                        <div class="actions">
+                            <a href="/update/${product._id}" class="btn btn-edit">Edit Product</a>
+                            <button class="btn btn-delete" onclick="deleteProduct('${product._id}')">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function deleteProduct(productId) {
+            if (confirm('Are you sure you want to delete this product?')) {
+                try {
+                    const response = await fetch(`/api/products/${productId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        // Product will be removed via socket event
+                    } else {
+                        alert('Failed to delete product');
+                    }
+                } catch (error) {
+                    console.error('Error deleting product:', error);
+                    alert('Error deleting product');
+                }
+            }
+        }
+
+        // Socket event listeners
+        socket.on('productCreated', (newProduct) => {
+            loadProducts(); // Reload all products
+        });
+
+        socket.on('productUpdated', (updatedProduct) => {
+            loadProducts(); // Reload all products
+        });
+
+        socket.on('productDeleted', (data) => {
+            loadProducts(); // Reload all products
+        });
+    </script>
+</body>
+</html>
