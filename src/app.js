@@ -25,11 +25,12 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const CLIENT_URL = process.env.CORS_URL || 'http://localhost:5173';
+const CLIENT_URL2 = process.env.CORS_URL2 || 'http://localhost:5173';
 
 const app = express();
 
 const corsOptions = {
-  origin: CLIENT_URL,
+  origin: [CLIENT_URL, CLIENT_URL2],
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
