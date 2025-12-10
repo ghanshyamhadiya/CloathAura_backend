@@ -94,50 +94,38 @@ export const authenticationToken = async (req, res, next) => {
   }
 };
 
-export const socketAuth = (socket, next) => {
+export const socketAuth = async (socket, next) => {
   try {
-    const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(" ")[1];
-
+    let token = socket.handshake?.auth?.token;
     if (!token) {
-      socket.emit('auth:error', { message: 'No authentication token provided', code: 'NO_TOKEN' });
-      return next(new Error("No authentication token provided"));
+      const authHeader = socket.handshake?.headers?.authorization;
+      if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1];
+      }
     }
 
-    const decoded = verifyToken(token, "access");
+    if (!token) return next(new Error("NO_TOKEN"));
 
-    User.findById(decoded.id)
-      .select("-password -refreshToken")
-      .lean()
-      .then(user => {
-        if (!user) {
-          socket.emit('auth:error', { message: 'User not found', code: 'USER_NOT_FOUND' });
-          return next(new Error("User not found"));
-        }
-
-        socket.userId = decoded.id;
-        socket.user = {
-          ...user,
-          _id: user._id.toString(),
-          id: user._id.toString()
-        };
-
-        socket.emit('auth:success', { message: 'Authentication successful', user: socket.user });
-        next();
-      })
-      .catch(error => {
-        console.error("Socket auth database error:", error);
-        socket.emit('auth:error', { message: 'Authentication failed', code: 'AUTH_FAILED' });
-        next(new Error("Authentication failed"));
-      });
-  } catch (error) {
-    console.error("Socket authentication error:", error);
-    if (error.message === "Token has expired") {
-      socket.emit('auth:refreshRequired', { message: 'Token expired, please refresh', code: 'TOKEN_EXPIRED' });
-      return next(new Error("Token expired"));
-    } else {
-      socket.emit('auth:error', { message: 'Invalid token', code: 'INVALID_TOKEN' });
-      return next(new Error("Invalid token"));
+    let decoded;
+    try {
+      decoded = verifyToken(token, "access");
+    } catch (err) {
+      if (err.message === "Token has expired") return next(new Error("TOKEN_EXPIRED"));
+      return next(new Error("INVALID_TOKEN"));
     }
+
+    const user = await User.findById(decoded.id).select("-password -refreshToken").lean();
+    if (!user) return next(new Error("USER_NOT_FOUND"));
+    if (user.accountStatus === "suspended" || user.accountStatus === "deleted") return next(new Error("ACCOUNT_SUSPENDED"));
+
+    socket.userId = decoded.id;
+    socket.user = { ...user, _id: user._id.toString(), id: user._id.toString() };
+    socket.userRole = user.role;
+
+    return next();
+  } catch (err) {
+    console.error("Socket authentication error:", err);
+    return next(new Error("AUTH_SERVICE_ERROR"));
   }
 };
 
