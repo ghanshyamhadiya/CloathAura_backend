@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 
 if (process.env.NODE_ENV !== 'production') dotenv.config();
 
-const CLIENT_URL = process.env.CORS_URL || 'http://localhost:5173';
+const CLIENT_URL = 'https://cloth-aura.vercel.app';
 const CLIENT_URL2 = process.env.CORS_URL2 || 'http://localhost:5173';
 
 const app = express();
