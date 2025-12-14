@@ -133,39 +133,7 @@ const register = async (req, res) => {
             console.error("Error sending email:", err.message);
         }
 
-        let welcomeCoupon = null;
-        try {
-            welcomeCoupon = await Coupon.createWelcomeCoupons(newUser._id);
-            io.to(`user:${newUser._id}`).emit("coupon:assigned", {
-                message: "Welcome coupon assigned",
-                coupon: {
-                    code: welcomeCoupon.code,
-                    type: welcomeCoupon.type,
-                    discountValue: welcomeCoupon.discountValue,
-                    validUntil: welcomeCoupon.validUntil,
-                },
-            });
-        } catch (error) {
-            console.error("Error creating welcome coupon:", error);
-        }
-
-        try {
-            const universalCoupons = await Coupon.assignUniversalOnRegistration(newUser._id);
-            universalCoupons.forEach((coupon) => {
-                io.to(`user:${newUser._id}`).emit("coupon:assigned", {
-                    message: "Universal coupon assigned",
-                    coupon: {
-                        code: coupon.code,
-                        type: coupon.type,
-                        discountValue: coupon.discountValue,
-                        validUntil: coupon.validUntil,
-                    },
-                });
-            });
-        } catch (error) {
-            console.error("Error assigning universal coupons:", error);
-        }
-
+        // Generate tokens first
         const payload = {
             id: newUser._id,
             username: newUser.username,
@@ -179,6 +147,50 @@ const register = async (req, res) => {
         newUser.refreshToken = hashedToken;
         newUser.lastLoginAt = new Date();
         await newUser.save();
+
+        // ✅ FIXED: Assign coupons AFTER user is fully saved
+        let welcomeCoupon = null;
+        try {
+            // ✅ FIXED: Correct method name (singular)
+            welcomeCoupon = await Coupon.createWelcomeCoupon(newUser._id);
+            
+            // Emit socket event AFTER coupon is created
+            if (welcomeCoupon) {
+                io.to(`user:${newUser._id}`).emit("coupon:assigned", {
+                    message: "Welcome coupon assigned",
+                    coupon: {
+                        code: welcomeCoupon.code,
+                        type: welcomeCoupon.type,
+                        discountValue: welcomeCoupon.discountValue,
+                        validUntil: welcomeCoupon.validUntil,
+                    },
+                });
+            }
+        } catch (error) {
+            console.error("Error creating welcome coupon:", error);
+        }
+
+        try {
+            // ✅ FIXED: Correct method name
+            const universalCoupons = await Coupon.assignUniversalCouponsToUser(newUser._id);
+            
+            // Emit socket events AFTER coupons are assigned
+            if (universalCoupons && universalCoupons.length > 0) {
+                universalCoupons.forEach((coupon) => {
+                    io.to(`user:${newUser._id}`).emit("coupon:assigned", {
+                        message: "Universal coupon assigned",
+                        coupon: {
+                            code: coupon.code,
+                            type: coupon.type,
+                            discountValue: coupon.discountValue,
+                            validUntil: coupon.validUntil,
+                        },
+                    });
+                });
+            }
+        } catch (error) {
+            console.error("Error assigning universal coupons:", error);
+        }
 
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,

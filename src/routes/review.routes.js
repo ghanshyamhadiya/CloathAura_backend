@@ -1,5 +1,5 @@
-import { 
-    createReview, 
+import {
+    createReview,
     getReviewsByProduct,
     getReviewsByUser,
     updateReview,
@@ -8,22 +8,22 @@ import {
 import multer from "multer";
 import express from "express";
 import { compressedImages } from "../middleware/multer.js";
+import { authenticationToken } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Configure multer for memory storage
 const storage = multer.memoryStorage();
 
 const upload = multer({
     storage: storage,
     limits: {
         fileSize: 50 * 1024 * 1024, // 50MB per file
-        files: 5 // Allow up to 5 files as per your frontend
+        files: 5
     },
-    fileFilter: (req, file, cb) => { // Fixed: file parameter name was wrong
+    fileFilter: (req, file, cb) => {
         const isImage = file.mimetype.startsWith("image/");
         const isVideo = file.mimetype.startsWith("video/");
-        
+
         if (isImage || isVideo) {
             cb(null, true);
         } else {
@@ -32,11 +32,13 @@ const upload = multer({
     },
 });
 
-// Routes with proper middleware order
-router.post("/", upload.array('media', 5), compressedImages, createReview);
+// ✅ PUBLIC ROUTE - No authentication required
 router.get("/product/:productId", getReviewsByProduct);
-router.get("/user", getReviewsByUser);
-router.put("/:id", upload.array('media', 5), compressedImages, updateReview);
-router.delete("/:id", deleteReview);
+
+// ✅ PROTECTED ROUTES - Authentication required
+router.post("/", authenticationToken, upload.array('media', 5), compressedImages, createReview);
+router.get("/user", authenticationToken, getReviewsByUser);
+router.put("/:id", authenticationToken, upload.array('media', 5), compressedImages, updateReview);
+router.delete("/:id", authenticationToken, deleteReview);
 
 export default router;

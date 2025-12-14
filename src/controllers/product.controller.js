@@ -677,3 +677,4 @@ export const getProductAutocomplete = async (req, res) => {
     });
   }
 };
+

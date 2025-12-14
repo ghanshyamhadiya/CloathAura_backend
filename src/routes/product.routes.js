@@ -20,13 +20,13 @@ import {
 const router = express.Router();
 
 // Public routes
-router.get('/', getAllProducts);
-router.get('/page', getProducts);
-router.get('/search', getProductBySearch);
-router.get('/autocomplete', getProductAutocomplete);
-router.get('/:id', getProductById);
+router.get('/public', getAllProducts);
+router.get('/public/page', getProducts);
+router.get('/public/search', getProductBySearch);
+router.get('/public/autocomplete', getProductAutocomplete);
+router.get('/public/:id', getProductById);
 
-// Owner-specific route — put it clearly
+// Owner-specific route
 router.get('/owner/products', authenticationToken,ownerOperations, ownerProduct);
 
 // Protected routes

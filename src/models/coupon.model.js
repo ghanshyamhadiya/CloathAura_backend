@@ -111,7 +111,6 @@ const couponUsageSchema = new Schema({
   },
 }, { timestamps: true });
 
-// Indexes for performance
 couponSchema.index({ code: 1 });
 couponSchema.index({ type: 1, isActive: 1 });
 couponSchema.index({ validFrom: 1, validUntil: 1 });
@@ -119,10 +118,8 @@ userCouponSchema.index({ userId: 1, couponId: 1, isUsed: 1 });
 userCouponSchema.index({ userId: 1, isUsed: 1 });
 couponUsageSchema.index({ userId: 1, couponId: 1 });
 
-// Create welcome coupon for new user
 couponSchema.statics.createWelcomeCoupon = async function (userId) {
   try {
-    // Check if user already has a welcome coupon
     const UserCoupon = mongoose.model("UserCoupon");
     const existingWelcome = await UserCoupon.findOne({
       userId: userId,
@@ -136,10 +133,8 @@ couponSchema.statics.createWelcomeCoupon = async function (userId) {
       return existingWelcome.couponId;
     }
 
-    // Generate unique code
     const uniqueCode = `WELCOME${userId.toString().slice(-6).toUpperCase()}`;
     
-    // Create welcome coupon
     const welcomeCoupon = new this({
       code: uniqueCode,
       name: "Welcome Bonus",
@@ -148,7 +143,7 @@ couponSchema.statics.createWelcomeCoupon = async function (userId) {
       discountType: "percentage",
       discountValue: 10,
       validFrom: new Date(),
-      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       minimumOrderValue: 500,
       maximumDiscount: 1000,
       isActive: true,
@@ -156,7 +151,6 @@ couponSchema.statics.createWelcomeCoupon = async function (userId) {
 
     await welcomeCoupon.save();
 
-    // Assign to user
     const userCoupon = new UserCoupon({
       userId,
       couponId: welcomeCoupon._id,
@@ -172,12 +166,10 @@ couponSchema.statics.createWelcomeCoupon = async function (userId) {
   }
 };
 
-// Assign universal coupons to new user
 couponSchema.statics.assignUniversalCouponsToUser = async function (userId) {
   try {
     const CouponUsage = mongoose.model("CouponUsage");
     
-    // Find all active universal coupons
     const universalCoupons = await this.find({
       type: "universal",
       isActive: true,
@@ -194,7 +186,6 @@ couponSchema.statics.assignUniversalCouponsToUser = async function (userId) {
       return [];
     }
 
-    // Create usage records for each universal coupon
     const usageRecords = universalCoupons.map((coupon) => ({
       userId,
       couponId: coupon._id,
@@ -211,12 +202,10 @@ couponSchema.statics.assignUniversalCouponsToUser = async function (userId) {
   }
 };
 
-// Assign loyalty coupon on milestone
 couponSchema.statics.assignLoyaltyCoupon = async function (userId) {
   try {
     const UserCoupon = mongoose.model("UserCoupon");
     
-    // Check if user already has an unused loyalty coupon
     const existingLoyaltyCoupon = await UserCoupon.findOne({
       userId,
       isUsed: false,
@@ -230,10 +219,8 @@ couponSchema.statics.assignLoyaltyCoupon = async function (userId) {
       return null;
     }
 
-    // Generate unique code
     const uniqueCode = `LOYALTY${userId.toString().slice(-4).toUpperCase()}${Date.now().toString().slice(-4)}`;
     
-    // Create loyalty coupon
     const loyaltyCoupon = new this({
       code: uniqueCode,
       name: "Loyalty Reward",
@@ -242,7 +229,7 @@ couponSchema.statics.assignLoyaltyCoupon = async function (userId) {
       discountType: "fixed",
       discountValue: 200,
       validFrom: new Date(),
-      validUntil: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+      validUntil: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       minimumOrderValue: 1000,
       maximumDiscount: 200,
       isActive: true,
@@ -250,7 +237,6 @@ couponSchema.statics.assignLoyaltyCoupon = async function (userId) {
 
     await loyaltyCoupon.save();
 
-    // Assign to user
     const userCoupon = new UserCoupon({
       userId,
       couponId: loyaltyCoupon._id,
@@ -266,7 +252,6 @@ couponSchema.statics.assignLoyaltyCoupon = async function (userId) {
   }
 };
 
-// Apply coupon validation logic
 couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, subtotal, productIds, user) {
   try {
     const coupon = await this.findOne({
@@ -280,7 +265,6 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
       return { isValid: false, message: "Coupon not found or expired" };
     }
 
-    // Check minimum order value
     if (coupon.minimumOrderValue && subtotal < coupon.minimumOrderValue) {
       return {
         isValid: false,
@@ -288,7 +272,6 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
       };
     }
 
-    // Check applicable products
     if (coupon.applicableProducts && coupon.applicableProducts.length > 0) {
       const applicable = coupon.applicableProducts.some((productId) =>
         productIds.includes(productId.toString())
@@ -301,12 +284,10 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
       }
     }
 
-    // Check usage limit for universal coupons
     if (coupon.type === 'universal' && coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
       return { isValid: false, message: "Coupon usage limit reached" };
     }
 
-    // Calculate discount
     let discountAmount = 0;
     if (coupon.discountType === "percentage") {
       discountAmount = (coupon.discountValue / 100) * subtotal;
@@ -317,14 +298,12 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
       discountAmount = Math.min(coupon.discountValue, subtotal);
     }
 
-    // Type-specific validation
     const UserCoupon = mongoose.model("UserCoupon");
     const CouponUsage = mongoose.model("CouponUsage");
     const Order = mongoose.model("Order");
 
     switch (coupon.type) {
       case "welcome":
-        // Check if user has this coupon assigned
         const welcomeUserCoupon = await UserCoupon.findOne({
           userId,
           couponId: coupon._id,
@@ -338,31 +317,41 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
           };
         }
 
-        // Check if this is first order
-        const orderCount = await Order.countDocuments({
+        const hasCompletedOrder = await Order.findOne({
           userId,
-          status: { $in: ["pending", "processing", "shipped", "delivered"] },
+          status: { $in: ["delivered", "shipped", "processing"] }
         });
         
-        if (orderCount > 0) {
+        if (hasCompletedOrder) {
           return {
             isValid: false,
             message: "Welcome coupon is only valid for your first order",
           };
         }
 
-        // Check if within 30 days of registration
-        const daysSinceReg = (new Date() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24);
-        if (daysSinceReg > 30) {
-          return {
-            isValid: false,
-            message: "Welcome coupon expired (valid for 30 days after registration)",
-          };
+        let userCreatedAt;
+        if (user && user.createdAt) {
+          userCreatedAt = user.createdAt;
+        } else if (user && user.accountCreatedAt) {
+          userCreatedAt = user.accountCreatedAt;
+        } else {
+          const User = mongoose.model("User");
+          const fetchedUser = await User.findById(userId).select('createdAt accountCreatedAt').lean();
+          userCreatedAt = fetchedUser?.createdAt || fetchedUser?.accountCreatedAt;
+        }
+
+        if (userCreatedAt) {
+          const daysSinceReg = (new Date() - new Date(userCreatedAt)) / (1000 * 60 * 60 * 24);
+          if (daysSinceReg > 30) {
+            return {
+              isValid: false,
+              message: "Welcome coupon expired (valid for 30 days after registration)",
+            };
+          }
         }
         break;
 
       case "user":
-        // Check if user has this coupon assigned and unused
         const userCoupon = await UserCoupon.findOne({
           userId,
           couponId: coupon._id,
@@ -378,7 +367,6 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
         break;
 
       case "universal":
-        // Check if user has this coupon assigned and unused
         const couponUsage = await CouponUsage.findOne({
           userId,
           couponId: coupon._id,
@@ -394,7 +382,6 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
         break;
 
       case "loyalty":
-        // Check if user has this coupon assigned and unused
         const loyaltyCoupon = await UserCoupon.findOne({
           userId,
           couponId: coupon._id,

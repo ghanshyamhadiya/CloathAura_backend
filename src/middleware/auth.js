@@ -4,7 +4,7 @@ import User from "../models/user.model.js";
 import rateLimit from "express-rate-limit";
 
 export const emailVerificationLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  windowMs: 60 * 1000,
   max: 5,
   message: {
     success: false,
@@ -94,6 +94,7 @@ export const authenticationToken = async (req, res, next) => {
   }
 };
 
+// Modified socketAuth to allow guest connections
 export const socketAuth = async (socket, next) => {
   try {
     let token = socket.handshake?.auth?.token;
@@ -104,28 +105,53 @@ export const socketAuth = async (socket, next) => {
       }
     }
 
-    if (!token) return next(new Error("NO_TOKEN"));
+    // If no token, allow connection as guest
+    if (!token) {
+      console.log('Socket connecting as guest (no token)');
+      socket.isGuest = true;
+      return next();
+    }
 
+    // If token provided, validate it
     let decoded;
     try {
       decoded = verifyToken(token, "access");
     } catch (err) {
-      if (err.message === "Token has expired") return next(new Error("TOKEN_EXPIRED"));
-      return next(new Error("INVALID_TOKEN"));
+      if (err.message === "Token has expired") {
+        console.log('Socket token expired, connecting as guest');
+        socket.isGuest = true;
+        return next();
+      }
+      console.log('Invalid socket token, connecting as guest');
+      socket.isGuest = true;
+      return next();
     }
 
     const user = await User.findById(decoded.id).select("-password -refreshToken").lean();
-    if (!user) return next(new Error("USER_NOT_FOUND"));
-    if (user.accountStatus === "suspended" || user.accountStatus === "deleted") return next(new Error("ACCOUNT_SUSPENDED"));
+    if (!user) {
+      console.log('User not found for socket, connecting as guest');
+      socket.isGuest = true;
+      return next();
+    }
+    
+    if (user.accountStatus === "suspended" || user.accountStatus === "deleted") {
+      console.log('User account suspended, connecting as guest');
+      socket.isGuest = true;
+      return next();
+    }
 
+    // Authenticated connection
     socket.userId = decoded.id;
     socket.user = { ...user, _id: user._id.toString(), id: user._id.toString() };
     socket.userRole = user.role;
+    socket.isGuest = false;
 
     return next();
   } catch (err) {
     console.error("Socket authentication error:", err);
-    return next(new Error("AUTH_SERVICE_ERROR"));
+    // On error, allow as guest rather than blocking
+    socket.isGuest = true;
+    return next();
   }
 };
 

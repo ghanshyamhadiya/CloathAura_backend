@@ -13,7 +13,8 @@ import { authenticationToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.use(authenticationToken);
+router.use('/cart', authenticationToken);
+router.use('/wishlist', authenticationToken);
 
 // Cart routes
 router.post("/cart/add", cartAdd);

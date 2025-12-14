@@ -6,7 +6,6 @@ import User from "../models/user.model.js";
 import { io } from "../app.js";
 import { Coupon, UserCoupon, CouponUsage } from "../models/coupon.model.js";
 
-// CREATE ORDER
 export const createOrder = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -14,7 +13,6 @@ export const createOrder = async (req, res) => {
     const { shippingAddress, quantities, paymentMethod, couponCode } = req.body;
     const userId = req.userId;
 
-    // Validate required fields
     if (!shippingAddress) {
       await session.abortTransaction();
       session.endSession();
@@ -35,7 +33,6 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Validate payment method format
     const validPaymentMethods = ['cod', 'card', 'upi', 'wallet'];
     if (!validPaymentMethods.includes(paymentMethod)) {
       await session.abortTransaction();
@@ -47,7 +44,6 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Get user with cart
     const user = await User.findById(userId).populate("cart.product").session(session);
     if (!user) {
       await session.abortTransaction();
@@ -59,7 +55,6 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Check email verification
     if (!user.isEmailVerified) {
       await session.abortTransaction();
       session.endSession();
@@ -80,10 +75,7 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Fetch all products with a single query
-    const productIds = user.cart.map((item) =>
-      item.product?._id || item.product
-    );
+    const productIds = user.cart.map((item) => item.product?._id || item.product);
     const products = await Product.find({ _id: { $in: productIds } }).session(session);
 
     if (products.length === 0) {
@@ -96,7 +88,6 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // ✅ CRITICAL: Validate payment method is allowed for ALL products
     const productsNotAllowingPayment = [];
     for (const product of products) {
       const allowedMethods = product.allowedPaymentMethods || ['cod', 'card', 'upi', 'wallet'];
@@ -122,7 +113,6 @@ export const createOrder = async (req, res) => {
     const productIDs = [];
     const productUpdateMap = new Map();
 
-    // Validate cart items and update stock
     for (const cartItem of user.cart) {
       const productId = cartItem.product?._id || cartItem.product;
       const product = products.find((p) => p._id.equals(productId));
@@ -181,7 +171,6 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // Store original stock for potential rollback
       if (!productUpdateMap.has(product._id.toString())) {
         productUpdateMap.set(product._id.toString(), {
           product,
@@ -196,7 +185,6 @@ export const createOrder = async (req, res) => {
         originalStock: size.stock
       });
 
-      // Update stock
       size.stock -= finalQuantity;
       subtotal += size.price * finalQuantity;
       productIDs.push(productId);
@@ -210,28 +198,30 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Save all product updates
     for (const productData of productUpdateMap.values()) {
       await productData.product.save({ session });
     }
 
-    // Apply coupon if provided
     let discountAmount = 0;
     let appliedCoupon = null;
 
     if (couponCode && couponCode.trim()) {
       try {
+        const userForCoupon = await User.findById(userId)
+          .select('createdAt accountCreatedAt')
+          .session(session)
+          .lean();
+
         const couponResult = await Coupon.applyCoupon(
           couponCode.trim(),
           userId,
           null,
           subtotal,
           productIDs,
-          user
+          userForCoupon
         );
 
         if (!couponResult.isValid) {
-          // Rollback stock changes
           for (const productData of productUpdateMap.values()) {
             const product = productData.product;
             for (const update of productData.updates) {
@@ -264,7 +254,6 @@ export const createOrder = async (req, res) => {
         };
       } catch (couponError) {
         console.error("Coupon application error:", couponError);
-        // Rollback stock changes
         for (const productData of productUpdateMap.values()) {
           const product = productData.product;
           for (const update of productData.updates) {
@@ -291,7 +280,6 @@ export const createOrder = async (req, res) => {
 
     const finalAmount = Math.max(0, subtotal - discountAmount);
 
-    // Create order
     const order = new Order({
       userId,
       items: validatedItems,
@@ -306,7 +294,6 @@ export const createOrder = async (req, res) => {
 
     await order.save({ session });
 
-    // Update coupon usage if applied
     if (couponCode && appliedCoupon) {
       const coupon = await Coupon.findOne({
         code: couponCode.toUpperCase()
@@ -343,16 +330,13 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // Clear cart and add order to user
     user.cart = [];
     user.orders.push(order._id);
     await user.save({ session });
 
-    // Commit transaction
     await session.commitTransaction();
     session.endSession();
 
-    // Emit socket event
     io.emit("orderCreated", order);
 
     res.status(httpStatus.CREATED).json({
@@ -374,7 +358,6 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// Helper function to get common payment methods across all products
 const getCommonPaymentMethods = (products) => {
   if (products.length === 0) return [];
   
@@ -387,7 +370,6 @@ const getCommonPaymentMethods = (products) => {
   );
 };
 
-// GET ALL ORDERS (unchanged)
 export const getAllOrders = async (req, res) => {
   try {
     const { userId } = req.query;
@@ -413,7 +395,6 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// GET ORDER BY ID (unchanged)
 export const getOrderById = async (req, res) => {
   const { id } = req.params;
 
@@ -453,7 +434,6 @@ export const getOrderById = async (req, res) => {
   }
 };
 
-// DELETE ORDER (unchanged)
 export const deleteOrder = async (req, res) => {
   const { id } = req.params;
   const session = await mongoose.startSession();
@@ -481,7 +461,6 @@ export const deleteOrder = async (req, res) => {
       });
     }
 
-    // Restore stock
     for (const item of order.items) {
       const product = await Product.findById(item.productId).session(session);
       if (product) {
@@ -496,7 +475,6 @@ export const deleteOrder = async (req, res) => {
       }
     }
 
-    // Reverse coupon usage
     if (order.coupon && order.coupon.code) {
       const coupon = await Coupon.findOne({
         code: order.coupon.code
@@ -523,14 +501,12 @@ export const deleteOrder = async (req, res) => {
       }
     }
 
-    // Remove order from user
     await User.updateOne(
       { _id: order.userId },
       { $pull: { orders: order._id } },
       { session }
     );
 
-    // Delete order
     await Order.findByIdAndDelete(id, { session });
 
     await session.commitTransaction();
@@ -555,7 +531,6 @@ export const deleteOrder = async (req, res) => {
   }
 };
 
-// UPDATE ORDER STATUS (unchanged)
 export const updateOrder = async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -585,7 +560,6 @@ export const updateOrder = async (req, res) => {
       });
     }
 
-    // Authorization: Admin OR Owner of ANY product in the order
     const isAdmin = req.userRole === "admin";
     const isProductOwner = order.items.some(item =>
       item.productId?.owner?.toString() === req.userId
@@ -600,7 +574,6 @@ export const updateOrder = async (req, res) => {
       });
     }
 
-    // Prevent status downgrade
     const statusFlow = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
     const currentIndex = statusFlow.indexOf(order.status);
     const newIndex = statusFlow.indexOf(status);
@@ -653,20 +626,22 @@ export const getDashboardOrders = async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    let query = {};
+    let matchQuery = {};
+    let ownerProductIds = [];
 
     if (userRole === 'admin') {
       if (status) {
-        query.status = status;
+        matchQuery.status = status;
       }
     } else if (userRole === "owner") {
       const ownerProducts = await Product.find({ owner: userId }).select('_id').lean();
-      const ownerProductIds = ownerProducts.map(p => p._id);
+      ownerProductIds = ownerProducts.map(p => p._id);
 
-      query['items.productId'] = { $in: ownerProductIds };
+      // Only show orders that contain at least one of owner's products
+      matchQuery['items.productId'] = { $in: ownerProductIds };
 
       if (status) {
-        query.status = status;
+        matchQuery.status = status;
       }
     } else {
       return res.status(httpStatus.FORBIDDEN).json({
@@ -679,46 +654,132 @@ export const getDashboardOrders = async (req, res) => {
     const sortOptions = {};
     sortOptions[sortBy] = order === 'asc' ? 1 : -1;
 
-    const [orders, totalCount] = await Promise.all([
-      Order.find(query)
+    // Fetch orders with proper filtering
+    const [allOrders, totalCount] = await Promise.all([
+      Order.find(matchQuery)
         .populate("userId", "username email")
         .populate("items.productId", "name owner")
         .sort(sortOptions)
-        .skip(skip)
-        .limit(limitNum)
         .lean(),
-      Order.countDocuments(query)
+      Order.countDocuments(matchQuery)
     ]);
 
-    const stats = await Order.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$totalAmount" },
-          totalOrders: { $sum: 1 },
-          pendingOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] }
-          },
-          processingOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "processing"] }, 1, 0] }
-          },
-          shippedOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "shipped"] }, 1, 0] }
-          },
-          deliveredOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] }
-          },
-          cancelledOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] }
+    // For owners, filter to show only their products in each order
+    let filteredOrders = allOrders;
+    
+    if (userRole === 'owner') {
+      filteredOrders = allOrders.map(order => {
+        // Filter items to show only owner's products
+        const ownerItems = order.items.filter(item => 
+          ownerProductIds.some(pid => pid.toString() === item.productId._id.toString())
+        );
+        
+        return {
+          ...order,
+          items: ownerItems,
+          // Show full order details but mark it as partial if there are other items
+          isPartialOrder: ownerItems.length < order.items.length,
+          totalItemsInOrder: order.items.length
+        };
+      });
+    }
+
+    // Apply pagination to filtered results
+    const paginatedOrders = filteredOrders.slice(skip, skip + limitNum);
+
+    // Calculate statistics based on role
+    let stats;
+    
+    if (userRole === 'admin') {
+      // Admin: Calculate from ALL orders
+      stats = await Order.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: null,
+            // Only count revenue from delivered orders
+            totalRevenue: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$status", "delivered"] },
+                  "$totalAmount",
+                  0
+                ]
+              }
+            },
+            totalOrders: { $sum: 1 },
+            pendingOrders: {
+              $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] }
+            },
+            processingOrders: {
+              $sum: { $cond: [{ $eq: ["$status", "processing"] }, 1, 0] }
+            },
+            shippedOrders: {
+              $sum: { $cond: [{ $eq: ["$status", "shipped"] }, 1, 0] }
+            },
+            deliveredOrders: {
+              $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] }
+            },
+            cancelledOrders: {
+              $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] }
+            }
           }
         }
-      }
-    ]);
+      ]);
+    } else {
+      // Owner: Calculate revenue only from their products
+      const ownerOrders = await Order.find({
+        'items.productId': { $in: ownerProductIds }
+      }).lean();
+
+      let totalRevenue = 0;
+      let totalOrders = ownerOrders.length;
+      let pendingOrders = 0;
+      let processingOrders = 0;
+      let shippedOrders = 0;
+      let deliveredOrders = 0;
+      let cancelledOrders = 0;
+
+      ownerOrders.forEach(order => {
+        // Calculate revenue from owner's products in delivered orders only
+        if (order.status === 'delivered') {
+          const ownerItemsSubtotal = order.items
+            .filter(item => ownerProductIds.some(pid => pid.toString() === item.productId.toString()))
+            .reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+          
+          // Apply proportional discount if coupon was used
+          if (order.coupon && order.coupon.discountAmount > 0 && order.subtotal > 0) {
+            const discountRatio = order.coupon.discountAmount / order.subtotal;
+            const ownerDiscount = ownerItemsSubtotal * discountRatio;
+            totalRevenue += (ownerItemsSubtotal - ownerDiscount);
+          } else {
+            totalRevenue += ownerItemsSubtotal;
+          }
+        }
+
+        // Count orders by status
+        if (order.status === 'pending') pendingOrders++;
+        if (order.status === 'processing') processingOrders++;
+        if (order.status === 'shipped') shippedOrders++;
+        if (order.status === 'delivered') deliveredOrders++;
+        if (order.status === 'cancelled') cancelledOrders++;
+      });
+
+      stats = [{
+        _id: null,
+        totalRevenue: Math.round(totalRevenue),
+        totalOrders,
+        pendingOrders,
+        processingOrders,
+        shippedOrders,
+        deliveredOrders,
+        cancelledOrders
+      }];
+    }
 
     res.status(httpStatus.OK).json({
       success: true,
-      orders,
+      orders: paginatedOrders,
       pagination: {
         totalCount,
         currentPage: pageNum,
@@ -727,7 +788,7 @@ export const getDashboardOrders = async (req, res) => {
         hasNext: pageNum * limitNum < totalCount,
         hasPrevious: pageNum > 1
       },
-      statistics: stats.length > 0 ? stats[0] : {
+      statistics: stats && stats.length > 0 ? stats[0] : {
         totalRevenue: 0,
         totalOrders: 0,
         pendingOrders: 0,
@@ -745,7 +806,319 @@ export const getDashboardOrders = async (req, res) => {
       success: false,
       message: "Internal server error",
       code: "INTERNAL_ERROR",
-    })
+    });
   }
-}
+};
 
+export const getOwnerAnalytics = async (req, res) => {
+  try {
+    const userRole = req.userRole;
+
+    // Only admins can access this endpoint
+    if (userRole !== 'admin') {
+      return res.status(httpStatus.FORBIDDEN).json({
+        success: false,
+        message: "Access denied. Admin only.",
+        code: "INSUFFICIENT_PERMISSIONS",
+      });
+    }
+
+    // Get all owners
+    const owners = await User.find({ role: 'owner' })
+      .select('username email accountCreatedAt isApproved')
+      .lean();
+
+    // Fetch analytics for each owner
+    const ownerAnalytics = await Promise.all(
+      owners.map(async (owner) => {
+        // Get owner's products
+        const products = await Product.find({ owner: owner._id })
+          .select('name category')
+          .lean();
+
+        const productIds = products.map(p => p._id);
+
+        // Get all orders containing owner's products
+        const orders = await Order.find({
+          'items.productId': { $in: productIds }
+        }).lean();
+
+        // Calculate revenue and order statistics
+        let totalRevenue = 0;
+        let orderStats = {
+          pending: 0,
+          processing: 0,
+          shipped: 0,
+          delivered: 0,
+          cancelled: 0
+        };
+
+        orders.forEach(order => {
+          // Count order by status
+          if (orderStats.hasOwnProperty(order.status)) {
+            orderStats[order.status]++;
+          }
+
+          // Calculate revenue only from delivered orders
+          if (order.status === 'delivered') {
+            // Calculate owner's portion of the order
+            const ownerItemsSubtotal = order.items
+              .filter(item => productIds.some(pid => pid.toString() === item.productId.toString()))
+              .reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+
+            // Apply proportional discount if coupon was used
+            if (order.coupon && order.coupon.discountAmount > 0 && order.subtotal > 0) {
+              const discountRatio = order.coupon.discountAmount / order.subtotal;
+              const ownerDiscount = ownerItemsSubtotal * discountRatio;
+              totalRevenue += (ownerItemsSubtotal - ownerDiscount);
+            } else {
+              totalRevenue += ownerItemsSubtotal;
+            }
+          }
+        });
+
+        return {
+          _id: owner._id,
+          username: owner.username,
+          email: owner.email,
+          accountCreatedAt: owner.accountCreatedAt,
+          isApproved: owner.isApproved,
+          totalProducts: products.length,
+          totalOrders: orders.length,
+          totalRevenue: Math.round(totalRevenue),
+          orderStats,
+          products: products.map(p => ({
+            _id: p._id,
+            name: p.name,
+            category: p.category
+          }))
+        };
+      })
+    );
+
+    // Sort by revenue (highest first)
+    ownerAnalytics.sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      owners: ownerAnalytics,
+      summary: {
+        totalOwners: ownerAnalytics.length,
+        totalRevenue: ownerAnalytics.reduce((sum, o) => sum + o.totalRevenue, 0),
+        totalProducts: ownerAnalytics.reduce((sum, o) => sum + o.totalProducts, 0),
+        totalOrders: ownerAnalytics.reduce((sum, o) => sum + o.totalOrders, 0)
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching owner analytics:", error);
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Internal server error",
+      code: "INTERNAL_ERROR",
+    });
+  }
+};
+
+
+export const getOwnerAnalyticsDetailed = async (req, res) => {
+  try {
+    const userRole = req.userRole;
+    const userId = req.userId;
+
+    // Only owners can access this endpoint
+    if (userRole !== 'owner') {
+      return res.status(httpStatus.FORBIDDEN).json({
+        success: false,
+        message: "Access denied. Owners only.",
+        code: "INSUFFICIENT_PERMISSIONS",
+      });
+    }
+
+    // Get owner's products
+    const products = await Product.find({ owner: userId })
+      .select('name category')
+      .lean();
+
+    const productIds = products.map(p => p._id);
+
+    // Get all orders containing owner's products
+    const orders = await Order.find({
+      'items.productId': { $in: productIds }
+    })
+    .populate('userId', 'username email')
+    .lean();
+
+    // Initialize analytics object
+    let analytics = {
+      totalRevenue: 0,
+      deliveredRevenue: 0,
+      pendingRevenue: 0,
+      cancelledRevenue: 0,
+      totalOrders: orders.length,
+      totalProducts: products.length,
+      averageOrderValue: 0,
+      pendingOrders: 0,
+      processingOrders: 0,
+      shippedOrders: 0,
+      deliveredOrders: 0,
+      cancelledOrders: 0,
+      topProducts: [],
+      recentOrders: [],
+      monthlyData: []
+    };
+
+    // Track product performance
+    const productPerformance = new Map();
+    const monthlyRevenue = new Map();
+
+    orders.forEach(order => {
+      // Calculate owner's portion of each order
+      const ownerItems = order.items.filter(item => 
+        productIds.some(pid => pid.toString() === item.productId.toString())
+      );
+
+      const ownerItemsSubtotal = ownerItems.reduce((sum, item) => 
+        sum + (item.unitPrice * item.quantity), 0
+      );
+
+      // Apply proportional discount if coupon was used
+      let ownerRevenue = ownerItemsSubtotal;
+      if (order.coupon && order.coupon.discountAmount > 0 && order.subtotal > 0) {
+        const discountRatio = order.coupon.discountAmount / order.subtotal;
+        const ownerDiscount = ownerItemsSubtotal * discountRatio;
+        ownerRevenue = ownerItemsSubtotal - ownerDiscount;
+      }
+
+      // Count orders by status
+      if (order.status === 'pending') analytics.pendingOrders++;
+      if (order.status === 'processing') analytics.processingOrders++;
+      if (order.status === 'shipped') analytics.shippedOrders++;
+      if (order.status === 'delivered') analytics.deliveredOrders++;
+      if (order.status === 'cancelled') analytics.cancelledOrders++;
+
+      // Revenue by status
+      if (order.status === 'delivered') {
+        analytics.deliveredRevenue += ownerRevenue;
+        analytics.totalRevenue += ownerRevenue;
+      } else if (order.status === 'cancelled') {
+        analytics.cancelledRevenue += ownerRevenue;
+      } else {
+        analytics.pendingRevenue += ownerRevenue;
+      }
+
+      // Track product performance
+      ownerItems.forEach(item => {
+        const productId = item.productId.toString();
+        if (!productPerformance.has(productId)) {
+          const productInfo = products.find(p => p._id.toString() === productId);
+          productPerformance.set(productId, {
+            _id: productId,
+            name: productInfo?.name || 'Unknown Product',
+            category: productInfo?.category || 'Unknown',
+            revenue: 0,
+            orderCount: 0
+          });
+        }
+        const perf = productPerformance.get(productId);
+        if (order.status === 'delivered') {
+          const itemRevenue = item.unitPrice * item.quantity;
+          // Apply proportional discount
+          if (order.coupon && order.coupon.discountAmount > 0 && order.subtotal > 0) {
+            const discountRatio = order.coupon.discountAmount / order.subtotal;
+            perf.revenue += itemRevenue - (itemRevenue * discountRatio);
+          } else {
+            perf.revenue += itemRevenue;
+          }
+          perf.orderCount++;
+        }
+      });
+
+      // Monthly data
+      const monthYear = new Date(order.createdAt).toLocaleDateString('en-IN', { 
+        year: 'numeric', 
+        month: 'short' 
+      });
+      if (!monthlyRevenue.has(monthYear)) {
+        monthlyRevenue.set(monthYear, { revenue: 0, orders: 0 });
+      }
+      if (order.status === 'delivered') {
+        const monthly = monthlyRevenue.get(monthYear);
+        monthly.revenue += ownerRevenue;
+        monthly.orders++;
+      }
+    });
+
+    // Calculate average order value
+    analytics.averageOrderValue = analytics.deliveredOrders > 0 
+      ? Math.round(analytics.deliveredRevenue / analytics.deliveredOrders)
+      : 0;
+
+    // Round revenue values
+    analytics.totalRevenue = Math.round(analytics.totalRevenue);
+    analytics.deliveredRevenue = Math.round(analytics.deliveredRevenue);
+    analytics.pendingRevenue = Math.round(analytics.pendingRevenue);
+    analytics.cancelledRevenue = Math.round(analytics.cancelledRevenue);
+
+    // Top performing products (top 5)
+    analytics.topProducts = Array.from(productPerformance.values())
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5)
+      .map(p => ({
+        ...p,
+        revenue: Math.round(p.revenue)
+      }));
+
+    // Recent orders (last 10)
+    analytics.recentOrders = orders
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 10)
+      .map(order => {
+        const ownerItems = order.items.filter(item => 
+          productIds.some(pid => pid.toString() === item.productId.toString())
+        );
+        
+        const ownerItemsSubtotal = ownerItems.reduce((sum, item) => 
+          sum + (item.unitPrice * item.quantity), 0
+        );
+
+        let ownerRevenue = ownerItemsSubtotal;
+        if (order.coupon && order.coupon.discountAmount > 0 && order.subtotal > 0) {
+          const discountRatio = order.coupon.discountAmount / order.subtotal;
+          ownerRevenue = ownerItemsSubtotal - (ownerItemsSubtotal * discountRatio);
+        }
+
+        return {
+          _id: order._id,
+          createdAt: order.createdAt,
+          status: order.status,
+          itemCount: ownerItems.length,
+          ownerRevenue: Math.round(ownerRevenue)
+        };
+      });
+
+    // Monthly data (last 6 months)
+    analytics.monthlyData = Array.from(monthlyRevenue.entries())
+      .sort((a, b) => new Date(b[0]) - new Date(a[0]))
+      .slice(0, 6)
+      .map(([month, data]) => ({
+        month,
+        revenue: Math.round(data.revenue),
+        orders: data.orders
+      }))
+      .reverse();
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      ...analytics
+    });
+
+  } catch (error) {
+    console.error("Error fetching owner analytics:", error);
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Internal server error",
+      code: "INTERNAL_ERROR",
+    });
+  }
+};

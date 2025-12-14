@@ -23,7 +23,7 @@ const __dirname = path.dirname(__filename);
 if (process.env.NODE_ENV !== 'production') dotenv.config();
 
 const CLIENT_URL = process.env.CORS_URL || 'http://localhost:5173';
-const CLIENT_URL2 = process.env.CORS_URL2 || 'http://localhost:5173';
+const CLIENT_URL2 = process.env.CORS_URL2 || 'http://localhost:5174';
 
 const app = express();
 
@@ -60,9 +60,11 @@ app.use((req, res, next) => { req.io = io; next(); });
 io.use(socketAuth);
 
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id} auth=${!!socket.user}`);
+  const connectionType = socket.isGuest ? 'guest' : 'authenticated';
+  console.log(`Socket connected: ${socket.id} type=${connectionType} user=${socket.user?.username || 'guest'}`);
 
-  if (socket.user) {
+  // Only join user-specific rooms if authenticated
+  if (socket.user && !socket.isGuest) {
     const uid = socket.userId;
     socket.join(`user:${uid}`);
     socket.join(`role:${socket.userRole}`);
@@ -84,6 +86,7 @@ io.on('connection', (socket) => {
       socket.user = { ...user, _id: user._id.toString(), id: user._id.toString() };
       socket.userId = socket.user.id;
       socket.userRole = socket.user.role;
+      socket.isGuest = false;
       socket.join(`user:${socket.userId}`);
       socket.join(`role:${socket.userRole}`);
       socket.emit('auth:success', { message: 'Authentication successful', user: socket.user });
@@ -113,7 +116,9 @@ io.on('connection', (socket) => {
 
   socket.on('user:status', (data) => {
     const status = data?.status;
-    if (!socket.userId) return socket.emit('auth:error', { message: 'Not authenticated', code: 'NO_AUTH' });
+    if (!socket.userId || socket.isGuest) {
+      return socket.emit('auth:error', { message: 'Not authenticated', code: 'NO_AUTH' });
+    }
     socket.to(`user:${socket.userId}`).emit('user:statusUpdate', {
       userId: socket.userId,
       status,
@@ -122,18 +127,22 @@ io.on('connection', (socket) => {
   });
 
   socket.on('cart:update', (data) => {
-    if (!socket.userId) return socket.emit('auth:error', { message: 'Not authenticated', code: 'NO_AUTH' });
+    if (!socket.userId || socket.isGuest) {
+      return socket.emit('auth:error', { message: 'Not authenticated', code: 'NO_AUTH' });
+    }
     socket.to(`user:${socket.userId}`).emit('cart:updated', { ...data, timestamp: new Date() });
   });
 
   socket.on('wishlist:update', (data) => {
-    if (!socket.userId) return socket.emit('auth:error', { message: 'Not authenticated', code: 'NO_AUTH' });
+    if (!socket.userId || socket.isGuest) {
+      return socket.emit('auth:error', { message: 'Not authenticated', code: 'NO_AUTH' });
+    }
     socket.to(`user:${socket.userId}`).emit('wishlist:updated', { ...data, timestamp: new Date() });
   });
 
   socket.on('disconnect', (reason) => {
-    console.log(`Socket disconnected: ${socket.id} user=${socket.user?.username ?? 'unauth'} reason=${reason}`);
-    if (socket.userId) {
+    console.log(`Socket disconnected: ${socket.id} user=${socket.user?.username ?? 'guest'} reason=${reason}`);
+    if (socket.userId && !socket.isGuest) {
       socket.to(`user:${socket.userId}`).emit('user:sessionDisconnected', {
         sessionId: socket.id,
         timestamp: new Date(),
@@ -144,18 +153,22 @@ io.on('connection', (socket) => {
 
   socket.on('error', (error) => {
     console.error(`Socket error for ${socket.user?.username ?? socket.id}:`, error);
-    try { socket.emit('error', { message: 'A socket error occurred', timestamp: new Date() }); } catch(e) {}
+    try { 
+      socket.emit('error', { message: 'A socket error occurred', timestamp: new Date() }); 
+    } catch(e) {
+      console.error('Error sending error event:', e);
+    }
   });
 
   socket.emit('connection:established', {
     message: 'Connected successfully',
     userId: socket.userId || null,
     socketId: socket.id,
+    isGuest: socket.isGuest || false,
     timestamp: new Date(),
   });
-});
+}); 
 
-// routes and health endpoint - unchanged
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() }));
 app.use('/api', userRoutes);
 app.use('/api/products', productRoutes);
