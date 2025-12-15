@@ -32,12 +32,14 @@ const userSchema = new Schema({
     type: String,
     required: true,
     unique: true,
+    lowercase: true,
   },
   email: {
     type: String,
     required: true,
     unique: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email'],
+    lowercase: true,
   },
   password: {
     type: String,
@@ -101,9 +103,6 @@ const userSchema = new Schema({
   timestamps: true,
 });
 
-// Add indexes for auth and search
-userSchema.index({ username: 1 });
-userSchema.index({ email: 1 });
 
 // Ensure only one address is marked as default
 userSchema.pre('save', async function (next) {
