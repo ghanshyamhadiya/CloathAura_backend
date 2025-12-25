@@ -8,7 +8,8 @@ import {
     getProducts,
     getProductBySearch,
     getProductAutocomplete,
-    ownerProduct
+    ownerProduct,
+    getProductAsCategory
 } from '../controllers/product.controller.js';
 import { upload } from '../middleware/multer.js';
 import {
@@ -25,6 +26,7 @@ router.get('/public/page', getProducts);
 router.get('/public/search', getProductBySearch);
 router.get('/public/autocomplete', getProductAutocomplete);
 router.get('/public/:id', getProductById);
+router.get('/public/category/:id', getProductAsCategory);
 
 // Owner-specific route
 router.get('/owner/products', authenticationToken,ownerOperations, ownerProduct);

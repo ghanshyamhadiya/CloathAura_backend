@@ -678,3 +678,50 @@ export const getProductAutocomplete = async (req, res) => {
   }
 };
 
+export const getProductAsCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        message: "Product ID is required"
+      });
+    }
+
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        message: "Invalid product ID format"
+      });
+    }
+
+    const product = await Product.findById(id)
+      .select('-__v')
+      .lean();
+
+    if (!product) {
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "Product not found"
+      });
+    }
+
+    const categoryFormatted = product.category;
+    const categoryAsProduct = Product.findMany({ category: categoryFormatted })
+      .select('-__v')
+      .lean();
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      product,
+      categoryProducts: categoryAsProduct
+    });
+  } catch (error) {
+    console.error("Error fetching products as categories:", error);
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+}
