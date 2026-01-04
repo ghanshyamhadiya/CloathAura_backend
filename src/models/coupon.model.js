@@ -252,13 +252,20 @@ couponSchema.statics.assignLoyaltyCoupon = async function (userId) {
   }
 };
 
-couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, subtotal, productIds, user) {
+couponSchema.statics.applyCoupon = async function (
+  couponCode,
+  userId,
+  orderId,
+  subtotal,
+  productIds,
+  user
+) {
   try {
     const coupon = await this.findOne({
       code: couponCode.toUpperCase(),
       isActive: true,
       validFrom: { $lte: new Date() },
-      validUntil: { $gte: new Date() },
+      validUntil: { $gte: new Date() }
     });
 
     if (!coupon) {
@@ -268,31 +275,32 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
     if (coupon.minimumOrderValue && subtotal < coupon.minimumOrderValue) {
       return {
         isValid: false,
-        message: `Minimum order value of ₹${coupon.minimumOrderValue} required`,
+        message: `Minimum order value ₹${coupon.minimumOrderValue}`
       };
     }
 
-    if (coupon.applicableProducts && coupon.applicableProducts.length > 0) {
-      const applicable = coupon.applicableProducts.some((productId) =>
-        productIds.includes(productId.toString())
+    if (coupon.applicableProducts?.length) {
+      const allowed = coupon.applicableProducts.some(id =>
+        productIds.includes(id.toString())
       );
-      if (!applicable) {
-        return {
-          isValid: false,
-          message: "Coupon not applicable to products in your cart",
-        };
+      if (!allowed) {
+        return { isValid: false, message: "Coupon not applicable" };
       }
     }
 
-    if (coupon.type === 'universal' && coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
+    if (
+      coupon.type === "universal" &&
+      coupon.usageLimit &&
+      coupon.usageCount >= coupon.usageLimit
+    ) {
       return { isValid: false, message: "Coupon usage limit reached" };
     }
 
     let discountAmount = 0;
     if (coupon.discountType === "percentage") {
       discountAmount = (coupon.discountValue / 100) * subtotal;
-      if (coupon.maximumDiscount && discountAmount > coupon.maximumDiscount) {
-        discountAmount = coupon.maximumDiscount;
+      if (coupon.maximumDiscount) {
+        discountAmount = Math.min(discountAmount, coupon.maximumDiscount);
       }
     } else {
       discountAmount = Math.min(coupon.discountValue, subtotal);
@@ -302,119 +310,78 @@ couponSchema.statics.applyCoupon = async function (couponCode, userId, orderId, 
     const CouponUsage = mongoose.model("CouponUsage");
     const Order = mongoose.model("Order");
 
-    switch (coupon.type) {
-      case "welcome":
-        const welcomeUserCoupon = await UserCoupon.findOne({
+    if (coupon.type === "welcome") {
+      let userCoupon = await UserCoupon.findOne({
+        userId,
+        couponId: coupon._id,
+        isUsed: false
+      });
+
+      if (!userCoupon) {
+        userCoupon = await UserCoupon.create({ userId, couponId: coupon._id });
+      }
+
+      const existingOrder = await Order.findOne({
+        userId,
+        status: { $in: ["processing", "shipped", "delivered"] }
+      });
+
+      if (existingOrder) {
+        return { isValid: false, message: "Welcome coupon already used" };
+      }
+
+      const createdAt = user?.createdAt || user?.accountCreatedAt;
+      if (createdAt) {
+        const days = (Date.now() - new Date(createdAt)) / 86400000;
+        if (days > 30) {
+          return { isValid: false, message: "Welcome coupon expired" };
+        }
+      }
+    }
+
+    if (coupon.type === "user" || coupon.type === "loyalty") {
+      let userCoupon = await UserCoupon.findOne({
+        userId,
+        couponId: coupon._id,
+        isUsed: false
+      });
+
+      if (!userCoupon) {
+        userCoupon = await UserCoupon.create({ userId, couponId: coupon._id });
+      }
+    }
+
+    if (coupon.type === "universal") {
+      let usage = await CouponUsage.findOne({
+        userId,
+        couponId: coupon._id,
+        orderId: null
+      });
+
+      if (!usage) {
+        usage = await CouponUsage.create({
           userId,
           couponId: coupon._id,
-          isUsed: false,
+          orderId: null
         });
-        
-        if (!welcomeUserCoupon) {
-          return {
-            isValid: false,
-            message: "Welcome coupon not available for your account",
-          };
-        }
-
-        const hasCompletedOrder = await Order.findOne({
-          userId,
-          status: { $in: ["delivered", "shipped", "processing"] }
-        });
-        
-        if (hasCompletedOrder) {
-          return {
-            isValid: false,
-            message: "Welcome coupon is only valid for your first order",
-          };
-        }
-
-        let userCreatedAt;
-        if (user && user.createdAt) {
-          userCreatedAt = user.createdAt;
-        } else if (user && user.accountCreatedAt) {
-          userCreatedAt = user.accountCreatedAt;
-        } else {
-          const User = mongoose.model("User");
-          const fetchedUser = await User.findById(userId).select('createdAt accountCreatedAt').lean();
-          userCreatedAt = fetchedUser?.createdAt || fetchedUser?.accountCreatedAt;
-        }
-
-        if (userCreatedAt) {
-          const daysSinceReg = (new Date() - new Date(userCreatedAt)) / (1000 * 60 * 60 * 24);
-          if (daysSinceReg > 30) {
-            return {
-              isValid: false,
-              message: "Welcome coupon expired (valid for 30 days after registration)",
-            };
-          }
-        }
-        break;
-
-      case "user":
-        const userCoupon = await UserCoupon.findOne({
-          userId,
-          couponId: coupon._id,
-          isUsed: false,
-        });
-        
-        if (!userCoupon) {
-          return {
-            isValid: false,
-            message: "This coupon is not available for your account",
-          };
-        }
-        break;
-
-      case "universal":
-        const couponUsage = await CouponUsage.findOne({
-          userId,
-          couponId: coupon._id,
-          orderId: null,
-        });
-        
-        if (!couponUsage) {
-          return {
-            isValid: false,
-            message: "This coupon has already been used or is not available",
-          };
-        }
-        break;
-
-      case "loyalty":
-        const loyaltyCoupon = await UserCoupon.findOne({
-          userId,
-          couponId: coupon._id,
-          isUsed: false,
-        });
-        
-        if (!loyaltyCoupon) {
-          return {
-            isValid: false,
-            message: "Loyalty coupon not available for your account",
-          };
-        }
-        break;
-
-      default:
-        return { isValid: false, message: "Invalid coupon type" };
+      }
     }
 
     return {
       isValid: true,
-      discountAmount,
       coupon,
-      message: `Coupon applied successfully! You saved ₹${discountAmount.toFixed(2)}`,
+      discountAmount,
+      message: `Coupon applied. You saved ₹${discountAmount.toFixed(2)}`
     };
   } catch (error) {
-    console.error("Error applying coupon:", error);
     return {
       isValid: false,
-      message: "Error validating coupon",
-      error: error.message,
+      message: "Coupon validation failed",
+      error: error.message
     };
   }
 };
+
 
 export const Coupon = mongoose.model("Coupon", couponSchema);
 export const UserCoupon = mongoose.model("UserCoupon", userCouponSchema);

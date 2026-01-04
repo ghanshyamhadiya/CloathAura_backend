@@ -178,56 +178,56 @@ export const getAllCoupons = async (req, res) => {
 export const getUserCoupons = async (req, res) => {
   try {
     const userId = req.userId;
+    const now = new Date();
 
-    // Fetch assigned user-specific coupons (unused, active)
-    const userCoupons = await UserCoupon.find({
-      userId: userId,
+    const assignedCoupons = await UserCoupon.find({
+      userId,
       isUsed: false
-    }).populate({
-      path: 'couponId',
-      match: {
-        isActive: true,
-        validFrom: { $lte: new Date() },
-        validUntil: { $gte: new Date() }
-      }
-    }).lean();
+    })
+      .populate({
+        path: "couponId",
+        match: {
+          isActive: true,
+          validFrom: { $lte: now },
+          validUntil: { $gte: now }
+        }
+      })
+      .lean();
 
-    // Fetch used universal coupons
-    const usedUniversalCoupons = await CouponUsage.find({ userId: userId }).select('couponId').lean();
-    const usedCouponIds = usedUniversalCoupons.map(uc => uc.couponId);
+    const assignedList = assignedCoupons
+      .filter(c => c.couponId)
+      .map(c => c.couponId);
 
-    // Fetch available universal coupons
+    const usedUniversal = await CouponUsage.find({
+      userId
+    }).select("couponId");
+
+    const usedIds = usedUniversal.map(u => u.couponId.toString());
+
     const universalCoupons = await Coupon.find({
-      type: 'universal',
+      type: "universal",
       isActive: true,
-      validFrom: { $lte: new Date() },
-      validUntil: { $gte: new Date() },
-      _id: { $nin: usedCouponIds },
+      validFrom: { $lte: now },
+      validUntil: { $gte: now },
+      _id: { $nin: usedIds },
       $or: [
         { usageLimit: { $exists: false } },
         { $expr: { $lt: ["$usageCount", "$usageLimit"] } }
       ]
     }).lean();
 
-    // Combine available coupons (filter out null couponId from userCoupons)
-    const availableCoupons = [
-      ...userCoupons.filter(uc => uc.couponId).map(uc => uc.couponId),
-      ...universalCoupons
-    ];
-
-    res.status(httpStatus.OK).json({
+    res.json({
       success: true,
-      coupons: availableCoupons
+      coupons: [...assignedList, ...universalCoupons]
     });
-  } catch (error) {
-    console.error("Error fetching user coupons:", error);
-    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+  } catch (err) {
+    res.status(500).json({
       success: false,
-      message: "Internal server error",
-      code: "INTERNAL_ERROR"
+      message: "Failed to load coupons"
     });
   }
 };
+
 
 export const validateCoupon = async (req, res) => {
   try {
