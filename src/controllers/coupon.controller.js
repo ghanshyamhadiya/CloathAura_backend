@@ -1,24 +1,24 @@
 import mongoose from "mongoose";
 import httpStatus from "http-status";
 import { io } from "../app.js";
-import { Coupon, UserCoupon } from "../models/coupon.model.js";
+import { Coupon, UserCoupon, CouponUsage } from "../models/coupon.model.js";
 import User from "../models/user.model.js";
 
 export const createCoupon = async (req, res) => {
   try {
-    const { 
-      code, 
-      name, 
-      description, 
-      type, 
-      discountValue, 
-      discountType, 
-      minOrderAmount, 
-      maxDiscountAmount, 
-      usageLimit, 
-      validFrom, 
-      validUntil, 
-      applicableProducts 
+    const {
+      code,
+      name,
+      description,
+      type,
+      discountValue,
+      discountType,
+      minOrderAmount,
+      maxDiscountAmount,
+      usageLimit,
+      validFrom,
+      validUntil,
+      applicableProducts
     } = req.body;
 
     if (!code || !name || !type || !discountValue || !discountType || !validFrom || !validUntil) {
@@ -122,7 +122,7 @@ export const getAllCoupons = async (req, res) => {
     const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
 
     let query = {};
-    
+
     if (userRole === 'admin' || userRole === 'owner') {
       if (type && ['universal', 'welcome', 'user', 'loyalty'].includes(type)) {  // Fixed enum to "user"
         query.type = type;
@@ -134,11 +134,11 @@ export const getAllCoupons = async (req, res) => {
       query.isActive = true;
       query.validFrom = { $lte: new Date() };
       query.validUntil = { $gte: new Date() };
-      
+
       if (type && type !== 'universal') {
-        const userCoupons = await UserCoupon.find({ 
-          userId: userId, 
-          isUsed: false 
+        const userCoupons = await UserCoupon.find({
+          userId: userId,
+          isUsed: false
         }).select('couponId');
         const couponIds = userCoupons.map(uc => uc.couponId);
         query._id = { $in: couponIds };
@@ -179,6 +179,13 @@ export const getUserCoupons = async (req, res) => {
   try {
     const userId = req.userId;
     const now = new Date();
+
+    // Auto-generate welcome coupon if not exists
+    try {
+      await Coupon.createWelcomeCoupon(userId);
+    } catch (e) {
+      // Ignore error if already exists or fails
+    }
 
     const assignedCoupons = await UserCoupon.find({
       userId,
@@ -233,14 +240,14 @@ export const validateCoupon = async (req, res) => {
   try {
     const { couponCode, orderAmount } = req.body;
     const userId = req.userId;
-    
+
     if (!couponCode || orderAmount === undefined || orderAmount < 0) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
         message: "Valid coupon code and order amount are required"
       });
     }
-    
+
     const user = await User.findById(userId).populate('cart.product');
     if (!user) {
       return res.status(httpStatus.NOT_FOUND).json({
@@ -248,7 +255,7 @@ export const validateCoupon = async (req, res) => {
         message: "User not found"
       });
     }
-    
+
     // Extract product IDs from populated cart (fixed to handle populated data)
     const productIds = user.cart
       .filter(item => item.product && item.product._id) // Ensure product exists and has _id
@@ -256,14 +263,14 @@ export const validateCoupon = async (req, res) => {
 
     // Fixed: Call applyCoupon instead of validateCoupon
     const validation = await Coupon.applyCoupon(
-      couponCode, 
-      userId, 
+      couponCode,
+      userId,
       null,  // orderId is null for validation
-      orderAmount, 
+      orderAmount,
       productIds,
       user // Pass the user object
     );
-    
+
     res.status(httpStatus.OK).json({
       success: validation.isValid,
       message: validation.message,
@@ -338,7 +345,7 @@ export const updateCoupon = async (req, res) => {
     }
 
     if (updateData.code) {
-      const existingCoupon = await Coupon.findOne({ 
+      const existingCoupon = await Coupon.findOne({
         code: updateData.code.toUpperCase(),
         _id: { $ne: id }
       });
@@ -417,9 +424,9 @@ export const deleteCoupon = async (req, res) => {
       });
     }
 
-    const usageCount = await UserCoupon.countDocuments({ 
-      couponId: id, 
-      isUsed: true 
+    const usageCount = await UserCoupon.countDocuments({
+      couponId: id,
+      isUsed: true
     });
 
     if (usageCount > 0) {
@@ -544,7 +551,7 @@ export const getCouponAnalytics = async (req, res) => {
         message: "Access denied. Admin or owner role required."
       });
     }
-    
+
     if (couponId && !mongoose.Types.ObjectId.isValid(couponId)) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,

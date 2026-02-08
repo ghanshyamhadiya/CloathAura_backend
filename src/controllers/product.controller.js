@@ -62,11 +62,31 @@ export const getProducts = async (req, res) => {
     const requestPromise = (async () => {
       try {
         const [products, totalCount] = await Promise.all([
-          Product.find()
-            .select('-__v')
-            .skip(skip)
-            .limit(limit)
-            .lean(),
+          Product.aggregate([
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: "reviews",
+                localField: "_id",
+                foreignField: "productId",
+                as: "reviews"
+              }
+            },
+            {
+              $addFields: {
+                averageRating: { $ifNull: [{ $avg: "$reviews.rating" }, 0] },
+                totalReviews: { $size: "$reviews" }
+              }
+            },
+            {
+              $project: {
+                reviews: 0,
+                __v: 0
+              }
+            }
+          ]),
           Product.countDocuments()
         ]);
 

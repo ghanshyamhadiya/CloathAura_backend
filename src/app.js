@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import rateLimit from 'express-rate-limit';
 import userRoutes from './routes/user.routes.js';
 import cookieParser from 'cookie-parser';
 import productRoutes from './routes/product.routes.js';
@@ -9,6 +10,7 @@ import cartWhislistRoutes from './routes/wishlist.cart.routes.js';
 import reviewRoutes from './routes/review.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import couponRoutes from './routes/coupon.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -23,9 +25,35 @@ const __dirname = path.dirname(__filename);
 if (process.env.NODE_ENV !== 'production') dotenv.config();
 
 const CLIENT_URL = process.env.CORS_URL || 'http://localhost:5173';
-const CLIENT_URL2 = process.env.CORS_URL2 || 'http://localhost:5173';
+const CLIENT_URL2 = process.env.CORS_URL2 || 'http://localhost:5174';
 
 const app = express();
+
+// Global Rate Limiter - 100 requests per 15 minutes per IP
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again later',
+    code: 'RATE_LIMIT_EXCEEDED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Strict rate limiter for auth routes - 10 attempts per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: {
+    success: false,
+    message: 'Too many authentication attempts, please try again later',
+    code: 'AUTH_RATE_LIMIT_EXCEEDED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 const corsOptions = {
   origin: [CLIENT_URL, CLIENT_URL2],
@@ -35,15 +63,31 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
+// Security middleware
+app.use(globalLimiter);
 app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json({ limit: '40kb' }));
 app.use(express.urlencoded({ limit: '40kb', extended: true }));
 
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'view'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('port', process.env.PORT || 8000);
+
+// Apply auth rate limiter to auth routes
+app.use('/api/auth', authLimiter);
+app.use('/api/login', authLimiter);
+app.use('/api/register', authLimiter);
 
 const server = http.createServer(app);
 
@@ -53,6 +97,20 @@ export const io = new Server(server, {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
   },
+  // Performance optimizations
+  transports: ['websocket', 'polling'], // WebSocket first for lower latency
+  pingInterval: 25000, // Ping every 25 seconds to keep connection alive
+  pingTimeout: 20000, // Wait 20 seconds for pong before disconnect
+  connectTimeout: 10000, // 10 second connection timeout
+  allowUpgrades: true, // Allow transport upgrades
+  perMessageDeflate: {
+    threshold: 1024, // Only compress messages > 1KB
+  },
+  // Connection state recovery for smoother reconnects
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    skipMiddlewares: false,
+  }
 });
 
 app.use((req, res, next) => { req.io = io; next(); });
@@ -153,9 +211,9 @@ io.on('connection', (socket) => {
 
   socket.on('error', (error) => {
     console.error(`Socket error for ${socket.user?.username ?? socket.id}:`, error);
-    try { 
-      socket.emit('error', { message: 'A socket error occurred', timestamp: new Date() }); 
-    } catch(e) {
+    try {
+      socket.emit('error', { message: 'A socket error occurred', timestamp: new Date() });
+    } catch (e) {
       console.error('Error sending error event:', e);
     }
   });
@@ -167,7 +225,7 @@ io.on('connection', (socket) => {
     isGuest: socket.isGuest || false,
     timestamp: new Date(),
   });
-}); 
+});
 
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() }));
 app.use('/api', userRoutes);
@@ -176,6 +234,7 @@ app.use('/api', cartWhislistRoutes);
 app.use('/api/review', reviewRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api', notificationRoutes);
 
 app.get('/add', (req, res) => res.render('product'));
 app.get('/update/:id', (req, res) => res.render('updateProduct', { productId: req.params.id }));

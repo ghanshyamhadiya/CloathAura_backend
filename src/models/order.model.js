@@ -82,7 +82,42 @@ const orderSchema = new Schema({
             type: String,
             enum: ['universal', 'welcome', 'user-specific', 'loyalty']
         }
-    }
+    },
+    // Approval workflow
+    approvalStatus: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected'],
+        default: 'pending'
+    },
+    ownersApproved: [{
+        ownerId: {
+            type: Schema.Types.ObjectId,
+            ref: "User"
+        },
+        approvedAt: Date,
+        response: {
+            type: String,
+            enum: ['approved', 'rejected']
+        }
+    }],
+    approvalHistory: [{
+        ownerId: {
+            type: Schema.Types.ObjectId,
+            ref: "User"
+        },
+        action: {
+            type: String,
+            enum: ['approved', 'rejected']
+        },
+        reason: String,
+        timestamp: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    approvedAt: Date,
+    rejectedAt: Date,
+    rejectionReason: String
 }, {
     timestamps: true
 });
@@ -91,6 +126,8 @@ const orderSchema = new Schema({
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ 'coupon.couponId': 1 });
+orderSchema.index({ approvalStatus: 1 });
+orderSchema.index({ 'ownersApproved.ownerId': 1 });
 
 const Order = mongoose.model("Order", orderSchema);
 export default Order;

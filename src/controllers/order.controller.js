@@ -5,6 +5,7 @@ import Product from "../models/product.model.js";
 import User from "../models/user.model.js";
 import { io } from "../app.js";
 import { Coupon, UserCoupon, CouponUsage } from "../models/coupon.model.js";
+import Notification from "../models/notification.model.js";
 
 export const createOrder = async (req, res) => {
   const session = await mongoose.startSession();
@@ -334,16 +335,83 @@ export const createOrder = async (req, res) => {
     user.orders.push(order._id);
     await user.save({ session });
 
+    // Get unique product owners from order for approval notifications
+    const orderedProductIds = validatedItems.map(item => item.productId);
+    const orderedProducts = await Product.find({ _id: { $in: orderedProductIds } })
+      .select('owner name')
+      .session(session);
+
+    const uniqueOwnerIds = [...new Set(orderedProducts.map(p => p.owner.toString()))];
+
+    // Create approval notifications for each product owner
+    const notifications = await Promise.all(
+      uniqueOwnerIds.map(ownerId =>
+        Notification.create([{
+          userId: ownerId,
+          type: 'order_approval_request',
+          title: 'New Order Requires Approval',
+          message: `New order #${order._id.toString().slice(-6)} for ₹${order.totalAmount} requires your approval`,
+          relatedOrder: order._id,
+          relatedUser: userId,
+          actionUrl: `/dashboard/orders/${order._id}`,
+          requiresAction: true,
+          metadata: {
+            orderAmount: order.totalAmount,
+            itemCount: order.items.length
+          }
+        }], { session })
+      )
+    );
+
     await session.commitTransaction();
     session.endSession();
 
-    io.emit("orderCreated", order);
+    // Emit real-time notifications to product owners
+    console.log(`📢 Sending notifications to ${uniqueOwnerIds.length} product owner(s)`);
+
+    uniqueOwnerIds.forEach((ownerId, index) => {
+      const notificationData = {
+        order: {
+          _id: order._id,
+          totalAmount: order.totalAmount,
+          items: order.items,
+          approvalStatus: order.approvalStatus,
+          userId: userId
+        },
+        notification: notifications[index][0]
+      };
+
+      console.log(`📧 Notifying owner ${ownerId} about order #${order._id.toString().slice(-6)}`);
+
+      // Emit specific order approval event
+      io.to(`user:${ownerId}`).emit('order:approval-required', notificationData);
+
+      // Also emit general notification event that NotificationContext listens to
+      io.to(`user:${ownerId}`).emit('notification:new', notifications[index][0]);
+
+      // Emit to role-based room as backup
+      io.to('role:owner').emit('notification:new', notifications[index][0]);
+    });
+
+    // Emit new order event to admins for real-time dashboard updates
+    io.to('role:admin').emit("orderCreated", order);
+
+    // Notify the user who placed the order that it was successfully created
+    io.to(`user:${userId}`).emit('order:created', {
+      orderId: order._id,
+      order: order,
+      message: 'Your order has been placed and is awaiting seller approval',
+      timestamp: new Date()
+    });
+
+    console.log(`✅ Order #${order._id.toString().slice(-6)} created successfully with notifications sent`);
 
     res.status(httpStatus.CREATED).json({
       success: true,
-      message: "Order created successfully",
+      message: "Order placed successfully. Awaiting seller approval.",
       order,
       savings: discountAmount > 0 ? discountAmount : undefined,
+      approvalRequired: true
     });
   } catch (error) {
     console.error("Error creating order:", error);
@@ -360,9 +428,9 @@ export const createOrder = async (req, res) => {
 
 const getCommonPaymentMethods = (products) => {
   if (products.length === 0) return [];
-  
+
   const allMethods = ['cod', 'card', 'upi', 'wallet'];
-  return allMethods.filter(method => 
+  return allMethods.filter(method =>
     products.every(product => {
       const allowedMethods = product.allowedPaymentMethods || ['cod', 'card', 'upi', 'wallet'];
       return allowedMethods.includes(method);
@@ -387,6 +455,30 @@ export const getAllOrders = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching orders:", error);
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Internal server error",
+      code: "INTERNAL_ERROR",
+    });
+  }
+};
+
+export const getUserOrders = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const orders = await Order.find({ userId })
+      .populate("userId", "username email")
+      .populate("items.productId", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      orders,
+    });
+  } catch (error) {
+    console.error("Error fetching user orders:", error);
     res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error",
@@ -597,7 +689,19 @@ export const updateOrder = async (req, res) => {
       .populate("items.productId", "name")
       .lean();
 
+    // Emit to all listeners (global)
     io.emit("orderUpdated", populatedOrder);
+
+    // Emit to specific user who placed the order for real-time updates
+    const userId = populatedOrder.userId?._id?.toString() || populatedOrder.userId?.toString();
+    if (userId) {
+      io.to(`user:${userId}`).emit('order:status-updated', {
+        orderId: id,
+        status: status,
+        order: populatedOrder,
+        timestamp: new Date()
+      });
+    }
 
     res.status(httpStatus.OK).json({
       success: true,
@@ -666,14 +770,14 @@ export const getDashboardOrders = async (req, res) => {
 
     // For owners, filter to show only their products in each order
     let filteredOrders = allOrders;
-    
+
     if (userRole === 'owner') {
       filteredOrders = allOrders.map(order => {
         // Filter items to show only owner's products
-        const ownerItems = order.items.filter(item => 
+        const ownerItems = order.items.filter(item =>
           ownerProductIds.some(pid => pid.toString() === item.productId._id.toString())
         );
-        
+
         return {
           ...order,
           items: ownerItems,
@@ -689,7 +793,7 @@ export const getDashboardOrders = async (req, res) => {
 
     // Calculate statistics based on role
     let stats;
-    
+
     if (userRole === 'admin') {
       // Admin: Calculate from ALL orders
       stats = await Order.aggregate([
@@ -746,7 +850,7 @@ export const getDashboardOrders = async (req, res) => {
           const ownerItemsSubtotal = order.items
             .filter(item => ownerProductIds.some(pid => pid.toString() === item.productId.toString()))
             .reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
-          
+
           // Apply proportional discount if coupon was used
           if (order.coupon && order.coupon.discountAmount > 0 && order.subtotal > 0) {
             const discountRatio = order.coupon.discountAmount / order.subtotal;
@@ -946,8 +1050,8 @@ export const getOwnerAnalyticsDetailed = async (req, res) => {
     const orders = await Order.find({
       'items.productId': { $in: productIds }
     })
-    .populate('userId', 'username email')
-    .lean();
+      .populate('userId', 'username email')
+      .lean();
 
     // Initialize analytics object
     let analytics = {
@@ -974,11 +1078,11 @@ export const getOwnerAnalyticsDetailed = async (req, res) => {
 
     orders.forEach(order => {
       // Calculate owner's portion of each order
-      const ownerItems = order.items.filter(item => 
+      const ownerItems = order.items.filter(item =>
         productIds.some(pid => pid.toString() === item.productId.toString())
       );
 
-      const ownerItemsSubtotal = ownerItems.reduce((sum, item) => 
+      const ownerItemsSubtotal = ownerItems.reduce((sum, item) =>
         sum + (item.unitPrice * item.quantity), 0
       );
 
@@ -1035,9 +1139,9 @@ export const getOwnerAnalyticsDetailed = async (req, res) => {
       });
 
       // Monthly data
-      const monthYear = new Date(order.createdAt).toLocaleDateString('en-IN', { 
-        year: 'numeric', 
-        month: 'short' 
+      const monthYear = new Date(order.createdAt).toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'short'
       });
       if (!monthlyRevenue.has(monthYear)) {
         monthlyRevenue.set(monthYear, { revenue: 0, orders: 0 });
@@ -1050,7 +1154,7 @@ export const getOwnerAnalyticsDetailed = async (req, res) => {
     });
 
     // Calculate average order value
-    analytics.averageOrderValue = analytics.deliveredOrders > 0 
+    analytics.averageOrderValue = analytics.deliveredOrders > 0
       ? Math.round(analytics.deliveredRevenue / analytics.deliveredOrders)
       : 0;
 
@@ -1074,11 +1178,11 @@ export const getOwnerAnalyticsDetailed = async (req, res) => {
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 10)
       .map(order => {
-        const ownerItems = order.items.filter(item => 
+        const ownerItems = order.items.filter(item =>
           productIds.some(pid => pid.toString() === item.productId.toString())
         );
-        
-        const ownerItemsSubtotal = ownerItems.reduce((sum, item) => 
+
+        const ownerItemsSubtotal = ownerItems.reduce((sum, item) =>
           sum + (item.unitPrice * item.quantity), 0
         );
 
@@ -1115,6 +1219,153 @@ export const getOwnerAnalyticsDetailed = async (req, res) => {
 
   } catch (error) {
     console.error("Error fetching owner analytics:", error);
+    res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Internal server error",
+      code: "INTERNAL_ERROR",
+    });
+  }
+};
+
+// Get users who have owner's products in cart or wishlist
+export const getOwnerProductInterest = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const userRole = req.userRole;
+
+    // Only owners can access this endpoint
+    if (userRole !== 'owner') {
+      return res.status(httpStatus.FORBIDDEN).json({
+        success: false,
+        message: "Access denied. Owners only.",
+        code: "INSUFFICIENT_PERMISSIONS",
+      });
+    }
+
+    // Get owner's product IDs
+    const ownerProducts = await Product.find({ owner: userId })
+      .select('_id name images')
+      .lean();
+
+    const productIds = ownerProducts.map(p => p._id);
+
+    if (productIds.length === 0) {
+      return res.status(httpStatus.OK).json({
+        success: true,
+        cartUsers: [],
+        wishlistUsers: [],
+        totalCartUsers: 0,
+        totalWishlistUsers: 0,
+        products: []
+      });
+    }
+
+    // Find users with owner's products in their wishlist
+    const usersWithWishlist = await User.find({
+      wishlist: { $in: productIds }
+    })
+      .select('username email wishlist createdAt')
+      .populate({
+        path: 'wishlist',
+        match: { owner: userId },
+        select: 'name images'
+      })
+      .lean();
+
+    // Find users with owner's products in their cart
+    const usersWithCart = await User.find({
+      'cart.product': { $in: productIds }
+    })
+      .select('username email cart createdAt')
+      .lean();
+
+    // Process cart users with product details
+    const cartUsersWithDetails = await Promise.all(
+      usersWithCart.map(async (user) => {
+        const ownerCartItems = user.cart.filter(item =>
+          productIds.some(pid => pid.toString() === item.product.toString())
+        );
+
+        // Get product details for cart items
+        const cartItemDetails = await Promise.all(
+          ownerCartItems.map(async (item) => {
+            const product = ownerProducts.find(p => p._id.toString() === item.product.toString());
+            return {
+              productId: item.product,
+              productName: product?.name || 'Unknown',
+              productImage: product?.images?.[0]?.url || null,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              totalPrice: item.quantity * item.unitPrice
+            };
+          })
+        );
+
+        const totalValue = cartItemDetails.reduce((sum, item) => sum + item.totalPrice, 0);
+
+        return {
+          userId: user._id,
+          username: user.username,
+          email: user.email,
+          items: cartItemDetails,
+          itemCount: cartItemDetails.length,
+          totalValue,
+          addedAt: user.createdAt
+        };
+      })
+    );
+
+    // Process wishlist users
+    const wishlistUsersWithDetails = usersWithWishlist.map(user => ({
+      userId: user._id,
+      username: user.username,
+      email: user.email,
+      products: user.wishlist.map(p => ({
+        productId: p._id,
+        productName: p.name,
+        productImage: p.images?.[0]?.url || null
+      })),
+      productCount: user.wishlist.length,
+      addedAt: user.createdAt
+    }));
+
+    // Get summary per product
+    const productInterestSummary = ownerProducts.map(product => {
+      const inWishlistCount = usersWithWishlist.filter(u =>
+        u.wishlist.some(w => w._id.toString() === product._id.toString())
+      ).length;
+
+      const inCartCount = cartUsersWithDetails.filter(u =>
+        u.items.some(item => item.productId.toString() === product._id.toString())
+      ).length;
+
+      const cartQuantity = cartUsersWithDetails.reduce((sum, user) => {
+        const item = user.items.find(i => i.productId.toString() === product._id.toString());
+        return sum + (item?.quantity || 0);
+      }, 0);
+
+      return {
+        productId: product._id,
+        productName: product.name,
+        productImage: product.images?.[0]?.url || null,
+        inWishlistCount,
+        inCartCount,
+        totalCartQuantity: cartQuantity
+      };
+    }).filter(p => p.inWishlistCount > 0 || p.inCartCount > 0);
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      cartUsers: cartUsersWithDetails,
+      wishlistUsers: wishlistUsersWithDetails,
+      totalCartUsers: cartUsersWithDetails.length,
+      totalWishlistUsers: wishlistUsersWithDetails.length,
+      productInterest: productInterestSummary,
+      totalPotentialRevenue: cartUsersWithDetails.reduce((sum, u) => sum + u.totalValue, 0)
+    });
+
+  } catch (error) {
+    console.error("Error fetching product interest:", error);
     res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error",

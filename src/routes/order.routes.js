@@ -5,9 +5,11 @@ import {
     getAllOrders,
     getDashboardOrders,
     getOrderById,
+    getUserOrders,
     getOwnerAnalytics,
     updateOrder,
-    getOwnerAnalyticsDetailed
+    getOwnerAnalyticsDetailed,
+    getOwnerProductInterest
 } from "../controllers/order.controller.js";
 import { adminOnlyOperations, authenticationToken, ownerAndAdminOperations, ownerOperations } from "../middleware/auth.js";
 
@@ -20,12 +22,14 @@ router.get("/dashboard", authenticationToken, ownerAndAdminOperations, getDashbo
 router.get("/admin/owner-analytics", authenticationToken, adminOnlyOperations, getOwnerAnalytics);
 
 router.get("/owner/analytics", authenticationToken, ownerOperations, getOwnerAnalyticsDetailed);
+router.get("/owner/product-interest", authenticationToken, ownerOperations, getOwnerProductInterest);
 
 // Order management routes
 router.post("/", authenticationToken, createOrder);
+router.get("/user/me", authenticationToken, getUserOrders);
 router.get("/", authenticationToken, ownerAndAdminOperations, getAllOrders);
 router.get("/:id", authenticationToken, getOrderById);
-router.put("/:id", authenticationToken, ownerAndAdminOperations, updateOrder); 
+router.put("/:id", authenticationToken, ownerAndAdminOperations, updateOrder);
 router.delete("/:id", authenticationToken, deleteOrder);
 
 export default router;
